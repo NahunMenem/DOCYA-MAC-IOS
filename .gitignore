@@ -1,0 +1,7 @@
+/build/ 
+/android/app/build/ 
+.dart_tool/ 
+.idea/ 
+.gradle/ 
+**/intermediates/** 
+**/generated/** 

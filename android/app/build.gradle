@@ -1,0 +1,75 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"      // Firebase Messaging
+}
+
+// ================================
+//   🔐 CARGAR KEYSTORE (RELEASE)
+// ================================
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace "com.docya.paciente"
+    compileSdkVersion 35
+
+    defaultConfig {
+        applicationId "com.docya.paciente"
+        minSdkVersion 23
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.0.0"
+        multiDexEnabled true
+    }
+
+    // 🔥 JAVA 17 OBLIGATORIO
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 🔥 KOTLIN JVM 17
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    // ============================
+    //   🔐 FIRMA RELEASE
+    // ============================
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+            storePassword keystoreProperties['storePassword']
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.multidex:multidex:2.0.1"
+
+    // Firebase Messaging
+    implementation platform('com.google.firebase:firebase-bom:33.5.1')
+    implementation 'com.google.firebase:firebase-messaging'
+
+    // Google Play Services
+    implementation 'com.google.android.gms:play-services-base:18.5.0'
+}
+
+flutter {
+    source = "../.."
+}

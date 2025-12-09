@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "117956759164",
+    "project_id": "docya-paciente",
+    "storage_bucket": "docya-paciente.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:117956759164:android:c2212224eff90c95b583f9",
+        "android_client_info": {
+          "package_name": "com.docya.paciente"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBN5H4TK-GT-undXi4yumEafR7vVt1QzqE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
