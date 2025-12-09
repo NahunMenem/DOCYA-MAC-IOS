@@ -78,6 +78,105 @@ class _PerfilScreenState extends State<PerfilScreen> {
     Navigator.pushReplacementNamed(context, "/login");
   }
 
+  // 🔥 CONFIRMACIÓN PARA ELIMINAR CUENTA
+  void _confirmarEliminacion(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+
+        return AlertDialog(
+          backgroundColor: isDark
+              ? Colors.black.withOpacity(0.85)
+              : Colors.white.withOpacity(0.90),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: Text(
+            "Eliminar cuenta",
+            style: TextStyle(
+              color: isDark ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Text(
+            "Esta acción eliminará tu cuenta y todos tus datos de forma permanente. No podrás recuperarla.",
+            style: TextStyle(
+              color: isDark ? Colors.white70 : Colors.black54,
+              fontSize: 15,
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text(
+                "Cancelar",
+                style: TextStyle(
+                  color: isDark ? Colors.white70 : Colors.black54,
+                ),
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+            TextButton(
+              child: const Text(
+                "Eliminar",
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                _eliminarCuenta();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+  // 🔥 LLAMADO AL BACKEND PARA ELIMINAR CUENTA
+  Future<void> _eliminarCuenta() async {
+    try {
+      final url = Uri.parse(
+        "https://docya-railway-production.up.railway.app/usuarios/${widget.userId}/delete",
+      );
+
+      final response = await http.delete(url);
+
+      if (response.statusCode == 200) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Cuenta eliminada correctamente"),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        Navigator.pushNamedAndRemoveUntil(context, "/login", (_) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error al eliminar cuenta: ${response.body}"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error inesperado: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _glass({
     required Widget child,
     double radius = 22,
@@ -314,6 +413,18 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     MaterialPageRoute(builder: (_) => const SoporteScreen()),
                   ),
                 ),
+                
+
+                const SizedBox(height: 12),
+
+                // 🔥 TILE DE ELIMINAR CUENTA
+                _tile(
+                  icon: Icons.delete_forever,
+                  title: "Eliminar cuenta",
+                  subtitle: "Borrar mi cuenta y todos mis datos",
+                  onTap: () => _confirmarEliminacion(context),
+                ),
+
               ],
             ),
           ),
