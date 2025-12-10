@@ -90,7 +90,7 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     super.initState();
     _cargarDatos();
 
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       _cargarDatos();
       _checkEstadoConsulta();
     });
