@@ -28,7 +28,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _pais;
   String? _provincia;
   String? _localidad;
-
+  DateTime? _fechaNacimiento;
+  String? _sexo;    
   bool _aceptaCondiciones = false;
   bool _loading = false;
   String? _error;
@@ -129,6 +130,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    if (_fechaNacimiento == null) {
+      setState(() => _error = "Selecciona tu fecha de nacimiento");
+      return;
+    }
+
+    if (_sexo == null) {
+      setState(() => _error = "Selecciona tu sexo");
+      return;
+    }
+
+
     if (!_aceptaCondiciones) {
       setState(() => _error = "Debes aceptar los Términos y Condiciones");
       return;
@@ -153,6 +165,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       pais: _pais!,
       provincia: _pais == "Argentina" ? _provincia : null,
       localidad: _pais == "Argentina" ? _localidad : null,
+      fechaNacimiento: _fechaNacimiento!.toIso8601String(),
+      sexo: _sexo!,
     );
 
     if (!mounted) return;
@@ -312,6 +326,74 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 Icons.check,
                                 isDark,
                                 obs: true),
+
+                            // ------------------------------------------------------
+                            // FECHA DE NACIMIENTO
+                            // ------------------------------------------------------
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: InkWell(
+                                onTap: () async {
+                                  final now = DateTime.now();
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: DateTime(now.year - 25),
+                                    firstDate: DateTime(1900),
+                                    lastDate: now,
+                                    builder: (context, child) {
+                                      return Theme(
+                                        data: ThemeData(
+                                          colorScheme: ColorScheme.light(
+                                            primary: const Color(0xFF14B8A6),
+                                            onPrimary: Colors.white,
+                                            surface: Colors.white,
+                                            onSurface: Colors.black87,
+                                          ),
+                                          dialogBackgroundColor: Colors.white,
+                                        ),
+                                        child: child!,
+                                      );
+                                    },
+
+                                  );
+                                  if (picked != null) {
+                                    setState(() => _fechaNacimiento = picked);
+                                  }
+                                },
+                                child: InputDecorator(
+                                  decoration: _input("Fecha de nacimiento", Icons.cake, isDark),
+                                  child: Text(
+                                    _fechaNacimiento == null
+                                        ? "Seleccionar fecha"
+                                        : "${_fechaNacimiento!.day}/${_fechaNacimiento!.month}/${_fechaNacimiento!.year}",
+                                    style: TextStyle(
+                                      color: isDark ? Colors.white70 : Colors.black87,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // ------------------------------------------------------
+                            // SEXO
+                            // ------------------------------------------------------
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: DropdownButtonFormField<String>(
+                                value: _sexo,
+                                decoration: _input("Sexo", Icons.people, isDark),
+                                dropdownColor: isDark ? const Color(0xFF203A43) : Colors.white,
+                                items: const [
+                                  DropdownMenuItem(value: "Masculino", child: Text("Masculino")),
+                                  DropdownMenuItem(value: "Femenino", child: Text("Femenino")),
+                                  DropdownMenuItem(value: "Otro", child: Text("Otro / Prefiero no decir")),
+                                ],
+                                onChanged: (v) => setState(() => _sexo = v),
+                                validator: (v) => v == null ? "Requerido" : null,
+                              ),
+                            ),
+    
 
                             // ------------------------------
                             // PAÍS
