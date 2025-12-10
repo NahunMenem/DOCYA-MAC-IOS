@@ -72,19 +72,35 @@ class _BuscandoMedicoScreenState extends State<BuscandoMedicoScreen>
     });
 
     // 🔥 Timeout FIJO de 60 segundos — SIEMPRE vuelve al home
-    _timeoutTimer = Timer(const Duration(seconds: 60), () {
+    _timeoutTimer = Timer(const Duration(seconds: 60), () async {
       _stopPolling();
 
-      DocYaSnackbar.show(
-        context,
-        title: "Sin profesionales disponibles",
-        message:
-            "No se pudo asignar un profesional en este momento. Intenta nuevamente.",
-        type: SnackType.warning,
-      );
+      // 🟣 CANCELAR BÚSQUEDA EN EL BACKEND
+      if (widget.consultaId != null) {
+        try {
+          await http.post(
+            Uri.parse("$apiBase/consultas/${widget.consultaId}/cancelar_busqueda"),
+            headers: {"Content-Type": "application/json"},
+          );
+          print("🛑 Consulta cancelada por timeout del paciente");
+        } catch (e) {
+          print("⚠️ Error cancelando consulta por timeout: $e");
+        }
+      }
+
+      // Mostrar aviso al usuario
+      if (mounted) {
+        DocYaSnackbar.show(
+          context,
+          title: "Sin profesionales disponibles",
+          message: "No se pudo asignar un profesional en este momento.",
+          type: SnackType.warning,
+        );
+      }
 
       _volverAlHome();
     });
+
   }
 
   // ===============================
