@@ -29,23 +29,16 @@ class AuthService {
 
         return {
           "ok": true,
-
-          // Token JWT
           "access_token": data['access_token'],
-
-          // ID: backend manda user_id afuera y user.id adentro
           "user_id": data['user_id']?.toString()
               ?? data['user']?['id']?.toString()
               ?? "",
-
-          // Nombre: backend manda full_name afuera y adentro
           "full_name": data['full_name']
               ?? data['user']?['full_name']
               ?? "Usuario",
         };
       }
 
-      // Error del backend
       final err = jsonDecode(res.body);
       return {
         "ok": false,
@@ -62,7 +55,7 @@ class AuthService {
   }
 
   // ---------------------------------------------------------------
-  // REGISTRO PACIENTE
+  // REGISTRO PACIENTE (ACTUALIZADO CON SEXO Y FECHA)
   // ---------------------------------------------------------------
   Future<Map<String, dynamic>> register(
     String name,
@@ -73,27 +66,31 @@ class AuthService {
     String? pais,
     String? provincia,
     String? localidad,
-    String? fechaNacimiento,
-    bool aceptoCondiciones = false,
+    required String fechaNacimiento,
+    required String sexo,
+    bool aceptoCondiciones = true,
     String versionTexto = "v1.0",
   }) async {
     try {
+      final body = {
+        'full_name': name,
+        'email': email,
+        'password': password,
+        'dni': dni,
+        'telefono': telefono,
+        'pais': pais,
+        'provincia': provincia,
+        'localidad': localidad,
+        'fecha_nacimiento': fechaNacimiento,
+        'sexo': sexo,
+        'acepto_condiciones': aceptoCondiciones,
+        'version_texto': versionTexto,
+      };
+
       final res = await http.post(
         Uri.parse('$BASE_URL/auth/register'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'full_name': name,
-          'email': email,
-          'password': password,
-          'dni': dni,
-          'telefono': telefono,
-          'pais': pais,
-          'provincia': provincia,
-          'localidad': localidad,
-          'fecha_nacimiento': fechaNacimiento,
-          'acepto_condiciones': aceptoCondiciones,
-          'version_texto': versionTexto,
-        }),
+        body: jsonEncode(body),
       );
 
       print("📥 REGISTER STATUS: ${res.statusCode}");
@@ -105,7 +102,7 @@ class AuthService {
         return {
           "ok": true,
           "mensaje": data["mensaje"] ??
-              "Registro exitoso. Verificá tu correo para activar tu cuenta.",
+              "Registro exitoso. Revisa tu correo para activar tu cuenta.",
           "user_id": data["user_id"]?.toString(),
           "full_name": data["full_name"],
           "role": data["role"] ?? "patient",
