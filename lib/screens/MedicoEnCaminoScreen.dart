@@ -1,10 +1,7 @@
-// 🌿 DOCYA – VISTA PREMIUM PROFESIONAL
-// Reemplaza tu archivo tal cual. Toda tu lógica está intacta.
-
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -16,17 +13,12 @@ import 'chat_screen.dart';
 import 'consulta_en_curso_screen.dart';
 
 double calcularDistanciaLocal(double lat1, double lon1, double lat2, double lon2) {
-  const R = 6371000;
-  final dLat = (lat2 - lat1) * (pi / 180);
-  final dLon = (lon2 - lon1) * (pi / 180);
-
-  final a = sin(dLat / 2) * sin(dLat / 2) +
-      cos(lat1 * (pi / 180)) *
-          cos(lat2 * (pi / 180)) *
-          sin(dLon / 2) *
-          sin(dLon / 2);
-
-  final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+  const R = 6371000; // metros
+  final dLat = (lat2 - lat1) * pi / 180;
+  final dLon = (lon2 - lon1) * pi / 180;
+  final a = sin(dLat/2)*sin(dLat/2) +
+      cos(lat1*pi/180)*cos(lat2*pi/180)*sin(dLon/2)*sin(dLon/2);
+  final c = 2 * atan2(sqrt(a), sqrt(1-a));
   return R * c;
 }
 
@@ -71,7 +63,6 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
 
   String mensaje = "Profesional en camino";
 
-  // 🎨 Nuevo estilo de mapa DocYa
   final String mapStyle = '''
   [
     {"elementType": "geometry", "stylers": [{"color": "#0F2027"}]},
@@ -102,42 +93,54 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     super.dispose();
   }
 
+  // ======================================================================
+  // 🔥 NUEVO MÉTODO COMPLETO PARA OBTENER DISTANCIA DESDE BACKEND + LOCAL
+  // ======================================================================
+
   Future<void> _cargarDatos() async {
     if (widget.consultaId == null) return;
 
-    final url =
-        "https://docya-railway-production.up.railway.app/consultas/${widget.consultaId}";
+    final base = "https://docya-railway-production.up.railway.app";
 
     try {
-      final resp = await http.get(Uri.parse(url));
+      // 1) Datos principales de consulta
+      final resp = await http.get(Uri.parse("$base/consultas/${widget.consultaId}"));
       if (resp.statusCode != 200) return;
-
       final data = jsonDecode(resp.body);
 
       final int eta = data["tiempo_estimado_min"] ?? 0;
       final double distanciaKmBackend = (data["distancia_km"] ?? 0).toDouble();
 
+      // 2) Obtener ubicación real del médico
+      final ubicResp = await http.get(
+        Uri.parse("$base/consultas/${widget.consultaId}/ubicacion_medico"),
+      );
+
       double metros;
 
-      if ((distanciaKmBackend == 0 || distanciaKmBackend < 0.05) &&
-          data["medico_lat"] != null &&
-          data["medico_lng"] != null) {
-        metros = calcularDistanciaLocal(
-          widget.ubicacionPaciente.latitude,
-          widget.ubicacionPaciente.longitude,
-          (data["medico_lat"] as num).toDouble(),
-          (data["medico_lng"] as num).toDouble(),
-        );
+      if (ubicResp.statusCode == 200) {
+        final u = jsonDecode(ubicResp.body);
+
+        if (u["lat"] != null && u["lng"] != null) {
+          // DISTANCIA CALCULADA LOCAL
+          metros = calcularDistanciaLocal(
+            widget.ubicacionPaciente.latitude,
+            widget.ubicacionPaciente.longitude,
+            (u["lat"] as num).toDouble(),
+            (u["lng"] as num).toDouble(),
+          );
+        } else {
+          metros = distanciaKmBackend * 1000;
+        }
       } else {
         metros = distanciaKmBackend * 1000;
       }
 
+      // 3) Actualizar UI
       setState(() {
         etaMinutos = eta;
 
-        if (distanciaInicial == 0.0 && metros > 0) {
-          distanciaInicial = metros;
-        }
+        if (distanciaInicial == 0 && metros > 0) distanciaInicial = metros;
 
         distanciaActual = metros;
         distanciaKm = metros / 1000;
@@ -152,10 +155,14 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
         else if (metros > 200) mensaje = "Preparáte para recibirlo";
         else mensaje = "El profesional está llegando";
       });
-
-      _checkEstadoConsulta();
-    } catch (_) {}
+    } catch (e) {
+      print("❌ Error cargando datos: $e");
+    }
   }
+
+  // ==========================
+  // 🔍 Ver si ya llegó
+  // ==========================
 
   Future<void> _checkEstadoConsulta() async {
     if (widget.consultaId == null) return;
@@ -246,7 +253,10 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     );
   }
 
-    // 🌿 TOP CARD – Nueva versión glass premium
+  // =======================
+  // 🌿 TOP CARD
+  // =======================
+
   Widget _buildTopCard() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
@@ -270,7 +280,6 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                   color: Colors.white,
                 ),
               ),
-
               const SizedBox(height: 10),
 
               if (distanciaKm > 0)
@@ -288,9 +297,8 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                       ),
                     ),
                   ],
-                ),
-
-              if (distanciaKm <= 0)
+                )
+              else
                 Text(
                   "Calculando distancia...",
                   style: TextStyle(
@@ -305,8 +313,10 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     );
   }
 
+  // =======================
+  // 🌿 BARRA DE PROGRESO
+  // =======================
 
-  // 🌿 BARRA PREMIUM DOCYA
   Widget _buildProgressBar(double w) {
     return SizedBox(
       height: 90,
@@ -368,9 +378,6 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                         ),
                       );
                     },
-                    onEnd: () {
-                      if (mounted) setState(() {});
-                    },
                   ),
                   Align(
                     alignment: Alignment.center,
@@ -388,7 +395,10 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     );
   }
 
-  // 🌿 BOTTOM CARD – Glass effect + DocYa style
+  // =======================
+  // 🌿 BOTTOM CARD
+  // =======================
+
   Widget _buildBottomCard() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(26),
@@ -438,8 +448,8 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                   )
                 ],
               ),
-
               const SizedBox(height: 22),
+
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -464,9 +474,9 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                       ),
                     );
                   },
-                  child: Row(
+                  child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
+                    children: [
                       Icon(Icons.chat_bubble_outline, size: 20, color: Colors.white),
                       SizedBox(width: 8),
                       Text(
@@ -478,7 +488,6 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                       ),
                     ],
                   ),
-
                 ),
               )
             ],
