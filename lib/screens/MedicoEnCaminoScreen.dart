@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -11,16 +10,6 @@ import 'package:intl/intl.dart';
 import '../widgets/docya_snackbar.dart';
 import 'chat_screen.dart';
 import 'consulta_en_curso_screen.dart';
-
-double calcularDistanciaLocal(double lat1, double lon1, double lat2, double lon2) {
-  const R = 6371000; // metros
-  final dLat = (lat2 - lat1) * pi / 180;
-  final dLon = (lon2 - lon1) * pi / 180;
-  final a = sin(dLat/2)*sin(dLat/2) +
-      cos(lat1*pi/180)*cos(lat2*pi/180)*sin(dLon/2)*sin(dLon/2);
-  final c = 2 * atan2(sqrt(a), sqrt(1-a));
-  return R * c;
-}
 
 class MedicoEnCaminoScreen extends StatefulWidget {
   final String direccion;
@@ -61,18 +50,20 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
   double distanciaActual = 0.0;
   double distanciaKm = 0.0;
 
+  double? _ultimaDistanciaBackend;
+
   String mensaje = "Profesional en camino";
 
   final String mapStyle = '''
   [
-    {"elementType": "geometry", "stylers": [{"color": "#0F2027"}]},
-    {"elementType": "labels.text.fill", "stylers": [{"color": "#ffffff"}]},
-    {"elementType": "labels.text.stroke", "stylers": [{"visibility": "off"}]},
-    {"featureType": "road", "stylers": [{"color": "#2C5364"}]},
-    {"featureType": "road.highway", "stylers": [{"color": "#14B8A6"}]},
-    {"featureType": "water", "stylers": [{"color": "#0C2F3A"}]},
-    {"featureType": "poi", "stylers": [{"visibility": "off"}]},
-    {"featureType": "transit", "stylers": [{"visibility": "off"}]}
+    {"elementType":"geometry","stylers":[{"color":"#0F2027"}]},
+    {"elementType":"labels.text.fill","stylers":[{"color":"#ffffff"}]},
+    {"elementType":"labels.text.stroke","stylers":[{"visibility":"off"}]},
+    {"featureType":"road","stylers":[{"color":"#2C5364"}]},
+    {"featureType":"road.highway","stylers":[{"color":"#14B8A6"}]},
+    {"featureType":"water","stylers":[{"color":"#0C2F3A"}]},
+    {"featureType":"poi","stylers":[{"visibility":"off"}]},
+    {"featureType":"transit","stylers":[{"visibility":"off"}]}
   ]
   ''';
 
@@ -93,9 +84,9 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     super.dispose();
   }
 
-  // ======================================================================
-  // 🔥 NUEVO MÉTODO COMPLETO PARA OBTENER DISTANCIA DESDE BACKEND + LOCAL
-  // ======================================================================
+  // =====================================================
+  // 🔥 DATOS DESDE BACKEND (SIN GPS REMOTO)
+  // =====================================================
 
   Future<void> _cargarDatos() async {
     if (widget.consultaId == null) return;
@@ -103,65 +94,58 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     final base = "https://docya-railway-production.up.railway.app";
 
     try {
-      // 1) Datos principales de consulta
-      final resp = await http.get(Uri.parse("$base/consultas/${widget.consultaId}"));
+      final resp =
+          await http.get(Uri.parse("$base/consultas/${widget.consultaId}"));
       if (resp.statusCode != 200) return;
+
       final data = jsonDecode(resp.body);
 
       final int eta = data["tiempo_estimado_min"] ?? 0;
-      final double distanciaKmBackend = (data["distancia_km"] ?? 0).toDouble();
+      final double distanciaKmBackend =
+          (data["distancia_km"] ?? 0).toDouble();
 
-      // 2) Obtener ubicación real del médico
-      final ubicResp = await http.get(
-        Uri.parse("$base/consultas/${widget.consultaId}/ubicacion_medico"),
-      );
+      double metros = distanciaKmBackend * 1000;
 
-      double metros;
-
-      if (ubicResp.statusCode == 200) {
-        final u = jsonDecode(ubicResp.body);
-
-        if (u["lat"] != null && u["lng"] != null) {
-          // DISTANCIA CALCULADA LOCAL
-          metros = calcularDistanciaLocal(
-            widget.ubicacionPaciente.latitude,
-            widget.ubicacionPaciente.longitude,
-            (u["lat"] as num).toDouble(),
-            (u["lng"] as num).toDouble(),
-          );
-        } else {
-          metros = distanciaKmBackend * 1000;
-        }
-      } else {
-        metros = distanciaKmBackend * 1000;
+      // 🛡️ Anti-jitter: nunca permitir retroceso
+      if (_ultimaDistanciaBackend != null &&
+          metros > _ultimaDistanciaBackend! + 50) {
+        metros = _ultimaDistanciaBackend!;
       }
 
-      // 3) Actualizar UI
+      _ultimaDistanciaBackend = metros;
+
       setState(() {
         etaMinutos = eta;
 
-        if (distanciaInicial == 0 && metros > 0) distanciaInicial = metros;
+        if (distanciaInicial == 0 && metros > 0) {
+          distanciaInicial = metros;
+        }
 
         distanciaActual = metros;
         distanciaKm = metros / 1000;
 
         if (distanciaInicial > 0) {
-          progreso = 1 - (distanciaActual / distanciaInicial);
-          progreso = progreso.clamp(0.05, 1.0);
+          progreso = 1 - (metros / distanciaInicial);
+          progreso = progreso.clamp(0.0, 1.0);
         }
 
-        if (metros > 1000) mensaje = "El profesional está en camino";
-        else if (metros > 500) mensaje = "El profesional está cerca";
-        else if (metros > 200) mensaje = "Preparáte para recibirlo";
-        else mensaje = "El profesional está llegando";
+        if (metros > 1000) {
+          mensaje = "El profesional está en camino";
+        } else if (metros > 500) {
+          mensaje = "El profesional está cerca";
+        } else if (metros > 200) {
+          mensaje = "Preparáte para recibirlo";
+        } else {
+          mensaje = "El profesional está llegando";
+        }
       });
     } catch (e) {
-      print("❌ Error cargando datos: $e");
+      debugPrint("❌ Error cargando datos: $e");
     }
   }
 
   // ==========================
-  // 🔍 Ver si ya llegó
+  // 🔍 Estado de consulta
   // ==========================
 
   Future<void> _checkEstadoConsulta() async {
@@ -197,6 +181,10 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
       }
     } catch (_) {}
   }
+
+  // =====================================================
+  // 🎨 UI
+  // =====================================================
 
   @override
   Widget build(BuildContext context) {
@@ -239,13 +227,13 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                     position: widget.ubicacionPaciente,
                     icon: BitmapDescriptor.defaultMarkerWithHue(
                         BitmapDescriptor.hueAzure),
-                  )
+                  ),
                 },
               ),
-
               Positioned(top: 55, left: 18, right: 18, child: _buildTopCard()),
               Positioned(top: 230, left: 0, right: 0, child: _buildProgressBar(w)),
-              Positioned(bottom: 10, left: 18, right: 18, child: _buildBottomCard()),
+              Positioned(
+                  bottom: 10, left: 18, right: 18, child: _buildBottomCard()),
             ],
           ),
         ),
@@ -281,12 +269,12 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-
               if (distanciaKm > 0)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.place, color: Color(0xFF14B8A6), size: 20),
+                    const Icon(Icons.place,
+                        color: Color(0xFF14B8A6), size: 20),
                     const SizedBox(width: 6),
                     Text(
                       "Distancia: ${distanciaKm.toStringAsFixed(2)} km",
@@ -361,24 +349,6 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
               height: 70,
               child: Stack(
                 children: [
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(seconds: 2),
-                    builder: (_, value, __) {
-                      final size = 25 + value * 45;
-                      return Center(
-                        child: Container(
-                          width: size,
-                          height: size,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(0xFF14B8A6)
-                                .withOpacity(0.22 * (1 - value)),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                   Align(
                     alignment: Alignment.center,
                     child: Image.asset(
@@ -449,7 +419,6 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                 ],
               ),
               const SizedBox(height: 22),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -477,7 +446,8 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.chat_bubble_outline, size: 20, color: Colors.white),
+                      Icon(Icons.chat_bubble_outline,
+                          size: 20, color: Colors.white),
                       SizedBox(width: 8),
                       Text(
                         "Enviar mensaje",
@@ -497,3 +467,4 @@ class _MedicoEnCaminoScreenState extends State<MedicoEnCaminoScreen> {
     );
   }
 }
+
