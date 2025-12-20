@@ -1,17 +1,18 @@
 // ==========================================================
 // DOCYA PACIENTE – MAIN FINAL 2025
 // iOS + Android 100% Compatible
-// Chat + Notificaciones Push + Sonido
+// Chat + Push + Sonido
 // ==========================================================
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'firebase_options.dart';
-import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import 'firebase_options.dart';
 
 // Screens
 import 'screens/splash_screen.dart';
@@ -19,26 +20,33 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/chat_screen.dart';
 
-// Navegación global
+// ==========================================================
+// NAVIGATOR GLOBAL
+// ==========================================================
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// Notificaciones locales
+// ==========================================================
+// LOCAL NOTIFICATIONS
+// ==========================================================
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 
 // ==========================================================
-// 🔥 BACKGROUND HANDLER
+// 🔥 BACKGROUND HANDLER (OBLIGATORIO iOS)
 // ==========================================================
+@pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print("📩 PUSH BACKGROUND: ${message.data}");
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   if (message.data["tipo"] == "nuevo_mensaje") {
     await flutterLocalNotificationsPlugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       "Nuevo mensaje",
       message.data["mensaje"] ?? "",
-      NotificationDetails(
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           'default_channel_id',
           'Notificaciones DocYa',
@@ -64,13 +72,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 
 // ==========================================================
-// TAP NOTIFICACIÓN LOCAL → abrir chat
+// TAP NOTIFICACIÓN LOCAL → ABRIR CHAT
 // ==========================================================
 void _handleLocalNotificationTap(String payload) {
-  print("📲 TAP LOCAL NOTIFICATION: $payload");
   final data = jsonDecode(payload);
 
-  navigatorKey.currentState!.push(
+  navigatorKey.currentState?.push(
     MaterialPageRoute(
       builder: (_) => ChatScreen(
         consultaId: int.parse(data["consulta_id"]),
@@ -83,51 +90,20 @@ void _handleLocalNotificationTap(String payload) {
 
 
 // ==========================================================
-// NOTIFICACIÓN LOCAL EN FOREGROUND
-// ==========================================================
-Future<void> mostrarNotificacionLocal(
-  String title,
-  String body, {
-  required int consultaId,
-  required String remitenteId,
-}) async {
-  await flutterLocalNotificationsPlugin.show(
-    DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    title,
-    body,
-    NotificationDetails(
-      android: AndroidNotificationDetails(
-        'default_channel_id',
-        'Notificaciones DocYa',
-        importance: Importance.max,
-        priority: Priority.high,
-        playSound: true,
-        sound: RawResourceAndroidNotificationSound('alerta'),
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      ),
-    ),
-    payload: jsonEncode({
-      "consulta_id": consultaId,
-      "remitente_id": remitenteId,
-    }),
-  );
-}
-
-
-// ==========================================================
 // MAIN
 // ==========================================================
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
-  // Canal Android
+  FirebaseMessaging.onBackgroundMessage(
+    _firebaseMessagingBackgroundHandler,
+  );
+
+  // ANDROID CHANNEL
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>()
@@ -141,7 +117,7 @@ Future<void> main() async {
     ),
   );
 
-  // Inicialización de notificaciones locales
+  // LOCAL NOTIFICATIONS INIT
   const initSettings = InitializationSettings(
     android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     iOS: DarwinInitializationSettings(),
@@ -180,59 +156,36 @@ class _DocYaAppState extends State<DocYaApp> {
   }
 
   Future<void> _initEverything() async {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
     await _pedirPermisosNotificaciones();
     _setupPushListeners();
     _cargarModo();
-    _fixAPNS();
-    _checkInitialPush(); // iOS cuando abren la app tocando la noti
+    _checkInitialPush(); // iOS app cerrada
   }
 
   // ==========================================================
-  // FIX iOS – si abren la app desde la notificación
+  // iOS – APP CERRADA DESDE NOTIFICACIÓN
   // ==========================================================
   Future<void> _checkInitialPush() async {
     final msg = await FirebaseMessaging.instance.getInitialMessage();
     if (msg == null) return;
 
-    print("🍏 NOTIFICACIÓN CON APP CERRADA: ${msg.data}");
-
     if (msg.data["tipo"] == "nuevo_mensaje") {
-      navigatorKey.currentState!.push(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
-            consultaId: int.parse(msg.data["consulta_id"]),
-            remitenteTipo: "paciente",
-            remitenteId: msg.data["remitente_id"],
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              consultaId: int.parse(msg.data["consulta_id"]),
+              remitenteTipo: "paciente",
+              remitenteId: msg.data["remitente_id"],
+            ),
           ),
-        ),
-      );
+        );
+      });
     }
   }
 
   // ==========================================================
-  // APNS FIX
-  // ==========================================================
-  Future<void> _fixAPNS() async {
-    print("🍏 Esperando APNS…");
-    String? apns = await FirebaseMessaging.instance.getAPNSToken();
-
-    int retry = 0;
-    while (apns == null && retry < 8) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      apns = await FirebaseMessaging.instance.getAPNSToken();
-      retry++;
-    }
-
-    print("🍏 APNS TOKEN: $apns");
-    print("🔥 FCM TOKEN: ${await FirebaseMessaging.instance.getToken()}");
-  }
-
-  // ==========================================================
-  // Permisos
+  // PERMISOS
   // ==========================================================
   Future<void> _pedirPermisosNotificaciones() async {
     await Permission.notification.request();
@@ -245,29 +198,44 @@ class _DocYaAppState extends State<DocYaApp> {
   }
 
   // ==========================================================
-  // Push listeners
+  // PUSH LISTENERS (IGUAL QUE PRO)
   // ==========================================================
   void _setupPushListeners() {
-    // Foreground
-    FirebaseMessaging.onMessage.listen((msg) {
-      print("📥 FOREGROUND: ${msg.data}");
-
+    // FOREGROUND
+    FirebaseMessaging.onMessage.listen((msg) async {
       if (msg.data["tipo"] == "nuevo_mensaje") {
-        mostrarNotificacionLocal(
+        await flutterLocalNotificationsPlugin.show(
+          DateTime.now().millisecondsSinceEpoch ~/ 1000,
           "Nuevo mensaje",
           msg.data["mensaje"] ?? "",
-          consultaId: int.parse(msg.data["consulta_id"]),
-          remitenteId: msg.data["remitente_id"],
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'default_channel_id',
+              'Notificaciones DocYa',
+              importance: Importance.max,
+              priority: Priority.high,
+              playSound: true,
+              sound: RawResourceAndroidNotificationSound('alerta'),
+              icon: '@mipmap/ic_launcher',
+            ),
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+            ),
+          ),
+          payload: jsonEncode({
+            "consulta_id": msg.data["consulta_id"],
+            "remitente_id": msg.data["remitente_id"],
+          }),
         );
       }
     });
 
-    // TAP con app abierta o background
+    // BACKGROUND / TAP
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-      print("📲 TAP MESSAGE: ${msg.data}");
-
       if (msg.data["tipo"] == "nuevo_mensaje") {
-        navigatorKey.currentState!.push(
+        navigatorKey.currentState?.push(
           MaterialPageRoute(
             builder: (_) => ChatScreen(
               consultaId: int.parse(msg.data["consulta_id"]),
@@ -281,7 +249,7 @@ class _DocYaAppState extends State<DocYaApp> {
   }
 
   // ==========================================================
-  // Modo oscuro
+  // MODO OSCURO (ORIGINAL)
   // ==========================================================
   Future<void> _cargarModo() async {
     final prefs = await SharedPreferences.getInstance();
@@ -291,14 +259,16 @@ class _DocYaAppState extends State<DocYaApp> {
   }
 
   // ==========================================================
-  // Rutas
+  // RUTAS (ORIGINALES – NO TOCADAS)
   // ==========================================================
   Route<dynamic>? _generarRuta(RouteSettings settings) {
     switch (settings.name) {
       case "/splash":
         return MaterialPageRoute(builder: (_) => const SplashScreen());
+
       case "/login":
         return MaterialPageRoute(builder: (_) => const LoginScreen());
+
       case "/home":
         return MaterialPageRoute(
           builder: (_) => FutureBuilder(
@@ -312,7 +282,8 @@ class _DocYaAppState extends State<DocYaApp> {
 
               final prefs = snap.data!;
               return HomeScreen(
-                nombreUsuario: prefs.getString("nombreUsuario") ?? "Usuario",
+                nombreUsuario:
+                    prefs.getString("nombreUsuario") ?? "Usuario",
                 userId: prefs.getString("userId") ?? "",
                 onToggleTheme: () async {
                   setState(() => darkMode = !darkMode);
