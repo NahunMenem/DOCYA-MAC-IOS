@@ -102,7 +102,9 @@ class _ChatScreenState extends State<ChatScreen> {
             setState(() => _messages.add(data));
 
             final esMio =
+                data["remitente_tipo"] == widget.remitenteTipo &&
                 data["remitente_id"].toString() == widget.remitenteId;
+
 
             // 🔔 Notificar SOLO si el mensaje es del otro (evita doble push)
             if (!esMio) {
@@ -211,7 +213,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 itemBuilder: (context, index) {
                   final msg = _messages[index];
                   final isMine =
+                      msg["remitente_tipo"] == widget.remitenteTipo &&
                       msg["remitente_id"].toString() == widget.remitenteId;
+
 
                   return Align(
                     alignment:
