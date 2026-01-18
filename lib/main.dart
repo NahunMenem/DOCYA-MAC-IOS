@@ -12,6 +12,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+// 🔥 TIMEZONE
+import 'package:timezone/data/latest.dart' as tz;
+
 import 'firebase_options.dart';
 
 // Screens
@@ -95,6 +98,9 @@ void _handleLocalNotificationTap(String payload) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 🔥 TIMEZONE INIT (ARGENTINA READY)
+  tz.initializeTimeZones();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -159,12 +165,9 @@ class _DocYaAppState extends State<DocYaApp> {
     await _pedirPermisosNotificaciones();
     _setupPushListeners();
     _cargarModo();
-    _checkInitialPush(); // iOS app cerrada
+    _checkInitialPush();
   }
 
-  // ==========================================================
-  // iOS – APP CERRADA DESDE NOTIFICACIÓN
-  // ==========================================================
   Future<void> _checkInitialPush() async {
     final msg = await FirebaseMessaging.instance.getInitialMessage();
     if (msg == null) return;
@@ -184,9 +187,6 @@ class _DocYaAppState extends State<DocYaApp> {
     }
   }
 
-  // ==========================================================
-  // PERMISOS
-  // ==========================================================
   Future<void> _pedirPermisosNotificaciones() async {
     await Permission.notification.request();
 
@@ -197,11 +197,7 @@ class _DocYaAppState extends State<DocYaApp> {
     );
   }
 
-  // ==========================================================
-  // PUSH LISTENERS (IGUAL QUE PRO)
-  // ==========================================================
   void _setupPushListeners() {
-    // FOREGROUND
     FirebaseMessaging.onMessage.listen((msg) async {
       if (msg.data["tipo"] == "nuevo_mensaje") {
         await flutterLocalNotificationsPlugin.show(
@@ -232,7 +228,6 @@ class _DocYaAppState extends State<DocYaApp> {
       }
     });
 
-    // BACKGROUND / TAP
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
       if (msg.data["tipo"] == "nuevo_mensaje") {
         navigatorKey.currentState?.push(
@@ -248,9 +243,6 @@ class _DocYaAppState extends State<DocYaApp> {
     });
   }
 
-  // ==========================================================
-  // MODO OSCURO (ORIGINAL)
-  // ==========================================================
   Future<void> _cargarModo() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -258,17 +250,12 @@ class _DocYaAppState extends State<DocYaApp> {
     });
   }
 
-  // ==========================================================
-  // RUTAS (ORIGINALES – NO TOCADAS)
-  // ==========================================================
   Route<dynamic>? _generarRuta(RouteSettings settings) {
     switch (settings.name) {
       case "/splash":
         return MaterialPageRoute(builder: (_) => const SplashScreen());
-
       case "/login":
         return MaterialPageRoute(builder: (_) => const LoginScreen());
-
       case "/home":
         return MaterialPageRoute(
           builder: (_) => FutureBuilder(
@@ -294,15 +281,11 @@ class _DocYaAppState extends State<DocYaApp> {
             },
           ),
         );
-
       default:
         return null;
     }
   }
 
-  // ==========================================================
-  // UI FINAL
-  // ==========================================================
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
