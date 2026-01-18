@@ -130,7 +130,7 @@ class _SolicitudMedicoScreenState extends State<SolicitudMedicoScreen>
   int _calcularPrecio() {
     final ahora = DateTime.now().toUtc().add(const Duration(hours: -3));
     final h = ahora.hour;
-    return (h >= 22 || h < 6) ? 4 : 3;
+    return (h >= 22 || h < 6) ? 40000 : 30000;
   }
 
   String _mensajePrecio(int precio) {
