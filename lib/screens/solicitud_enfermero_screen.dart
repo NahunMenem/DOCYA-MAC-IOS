@@ -11,7 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'package:http/http.dart' as http;
-
+import 'package:timezone/timezone.dart' as tz;
 import '../globals.dart';
 import '../widgets/docya_snackbar.dart';
 import 'buscando_medico_screen.dart';
@@ -127,18 +127,18 @@ class _SolicitudEnfermeroScreenState extends State<SolicitudEnfermeroScreen>
 
 
   // ============================================================
-  // 🔥 PRECIO ENFERMERO DINÁMICO
+  // 🔥 PRECIO DINÁMICO – HORA ARGENTINA REAL
   // ============================================================
   int _calcularPrecio() {
-    final ahora = DateTime.now().toUtc().add(const Duration(hours: -3));
+    final argentina = tz.getLocation('America/Argentina/Buenos_Aires');
+    final ahora = tz.TZDateTime.now(argentina);
     final h = ahora.hour;
 
-    return (h >= 22 || h < 6) ? 3 : 2;
-    //return (h >= 22 || h < 6) ? 30000 : 20000;
+    return (h >= 22 || h < 6) ? 30000 : 20000;
   }
 
-  String _mensajePrecio(int p) {
-    return p == 30000
+  String _mensajePrecio(int precio) {
+    return precio == 30000
         ? "Tarifa nocturna (22:00–06:00). Incluye atención profesional de enfermería."
         : "Incluye atención profesional de enfermería a domicilio.";
   }
