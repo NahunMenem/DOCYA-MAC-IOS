@@ -6,6 +6,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,14 +15,18 @@ import 'package:permission_handler/permission_handler.dart';
 
 // 🔥 TIMEZONE
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 import 'firebase_options.dart';
+import 'services/live_activity_service.dart';
+import 'services/medication_reminder_service.dart';
 
 // Screens
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/complete_profile_screen.dart';
 
 // ==========================================================
 // NAVIGATOR GLOBAL
@@ -33,7 +38,8 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 // ==========================================================
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
-
+const String kMedicationReminderChannelId = 'medication_reminders_v2';
+const String kMedicationReminderChannelName = 'Recordatorios de medicacion';
 
 // ==========================================================
 // 🔥 BACKGROUND HANDLER (OBLIGATORIO iOS)
@@ -42,6 +48,35 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Initialize plugin in this background isolate and ensure channels exist
+  const initSettings = InitializationSettings(
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+  );
+  await flutterLocalNotificationsPlugin.initialize(initSettings);
+
+  final androidPlugin = flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+  await androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      'default_channel_id',
+      'Notificaciones DocYa',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('alerta'),
+    ),
+  );
+  await androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      kMedicationReminderChannelId,
+      kMedicationReminderChannelName,
+      description: 'Avisos programados del pastillero',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('alerta'),
+    ),
   );
 
   if (message.data["tipo"] == "nuevo_mensaje") {
@@ -70,27 +105,79 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         "remitente_id": message.data["remitente_id"],
       }),
     );
+    return;
+  }
+
+  if (message.data["tipo"] == "medication_reminder") {
+    final body = [
+      message.data["nombre"] ?? "Medicacion",
+      message.data["dosis"] ?? "",
+      if ((message.data["horario"] ?? "").toString().isNotEmpty)
+        '(${message.data["horario"]})',
+    ].where((item) => item.toString().trim().isNotEmpty).join(' ');
+
+    await flutterLocalNotificationsPlugin.show(
+      int.tryParse(message.data["toma_id"]?.toString() ?? '') ??
+          DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      "Recordatorio de medicacion",
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          kMedicationReminderChannelId,
+          kMedicationReminderChannelName,
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          sound: RawResourceAndroidNotificationSound('alerta'),
+          icon: '@mipmap/ic_launcher',
+          visibility: NotificationVisibility.public,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'default',
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+      ),
+      payload: jsonEncode({
+        "tipo": "medication_reminder",
+        "toma_id": message.data["toma_id"],
+      }),
+    );
   }
 }
-
 
 // ==========================================================
 // TAP NOTIFICACIÓN LOCAL → ABRIR CHAT
 // ==========================================================
-void _handleLocalNotificationTap(String payload) {
-  final data = jsonDecode(payload);
+Future<void> _openPatientChatFromPayload(Map<String, dynamic> data) async {
+  final consultaIdRaw = data["consulta_id"]?.toString();
+  if (consultaIdRaw == null || consultaIdRaw.isEmpty) return;
+
+  final prefs = await SharedPreferences.getInstance();
+  final userId = prefs.getString("userId");
+  if (userId == null || userId.isEmpty) return;
 
   navigatorKey.currentState?.push(
     MaterialPageRoute(
       builder: (_) => ChatScreen(
-        consultaId: int.parse(data["consulta_id"]),
+        consultaId: int.tryParse(consultaIdRaw),
         remitenteTipo: "paciente",
-        remitenteId: data["remitente_id"].toString(),
+        remitenteId: userId,
       ),
     ),
   );
 }
 
+Future<void> _handleLocalNotificationTap(String payload) async {
+  final data = jsonDecode(payload) as Map<String, dynamic>;
+  if (data["tipo"]?.toString() == "medication_reminder") {
+    navigatorKey.currentState?.pushNamed("/home");
+    return;
+  }
+  await _openPatientChatFromPayload(data);
+}
 
 // ==========================================================
 // MAIN
@@ -100,6 +187,7 @@ Future<void> main() async {
 
   // 🔥 TIMEZONE INIT (ARGENTINA READY)
   tz.initializeTimeZones();
+  tz.setLocalLocation(tz.getLocation('America/Argentina/Buenos_Aires'));
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -109,14 +197,26 @@ Future<void> main() async {
     _firebaseMessagingBackgroundHandler,
   );
 
-  // ANDROID CHANNEL
-  await flutterLocalNotificationsPlugin
+  // ANDROID CHANNELS – delete first to force sound update if previously cached without it
+  final _androidPlugin = flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
+          AndroidFlutterLocalNotificationsPlugin>();
+  await _androidPlugin?.deleteNotificationChannel('default_channel_id');
+  await _androidPlugin?.deleteNotificationChannel(kMedicationReminderChannelId);
+  await _androidPlugin?.createNotificationChannel(
     const AndroidNotificationChannel(
       'default_channel_id',
       'Notificaciones DocYa',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('alerta'),
+    ),
+  );
+  await _androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      kMedicationReminderChannelId,
+      kMedicationReminderChannelName,
+      description: 'Avisos programados del pastillero',
       importance: Importance.max,
       playSound: true,
       sound: RawResourceAndroidNotificationSound('alerta'),
@@ -138,9 +238,11 @@ Future<void> main() async {
     },
   );
 
+  // Compartir el plugin ya inicializado con el servicio de recordatorios
+  MedicationReminderService.init(flutterLocalNotificationsPlugin);
+
   runApp(const DocYaApp());
 }
-
 
 // ==========================================================
 // APP
@@ -163,9 +265,27 @@ class _DocYaAppState extends State<DocYaApp> {
 
   Future<void> _initEverything() async {
     await _pedirPermisosNotificaciones();
+    await LiveActivityService.instance.init();
     _setupPushListeners();
     _cargarModo();
     _checkInitialPush();
+    _listenTokenRefresh();
+  }
+
+  void _listenTokenRefresh() {
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString("userId");
+      if (userId == null || userId.isEmpty || newToken.isEmpty) return;
+      try {
+        await http.post(
+          Uri.parse(
+              "https://docya-railway-production.up.railway.app/users/$userId/fcm_token"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"fcm_token": newToken}),
+        );
+      } catch (_) {}
+    });
   }
 
   Future<void> _checkInitialPush() async {
@@ -174,15 +294,14 @@ class _DocYaAppState extends State<DocYaApp> {
 
     if (msg.data["tipo"] == "nuevo_mensaje") {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(
-            builder: (_) => ChatScreen(
-              consultaId: int.parse(msg.data["consulta_id"]),
-              remitenteTipo: "paciente",
-              remitenteId: msg.data["remitente_id"],
-            ),
-          ),
-        );
+        _openPatientChatFromPayload(msg.data);
+      });
+      return;
+    }
+
+    if (msg.data["tipo"] == "medication_reminder") {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.pushNamed("/home");
       });
     }
   }
@@ -195,6 +314,34 @@ class _DocYaAppState extends State<DocYaApp> {
       badge: true,
       sound: true,
     );
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestExactAlarmsPermission();
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            MacOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
   }
 
   void _setupPushListeners() {
@@ -225,20 +372,55 @@ class _DocYaAppState extends State<DocYaApp> {
             "remitente_id": msg.data["remitente_id"],
           }),
         );
+        return;
+      }
+
+      if (msg.data["tipo"] == "medication_reminder") {
+        final body = [
+          msg.data["nombre"] ?? "Medicacion",
+          msg.data["dosis"] ?? "",
+          if ((msg.data["horario"] ?? "").toString().isNotEmpty)
+            '(${msg.data["horario"]})',
+        ].where((item) => item.toString().trim().isNotEmpty).join(' ');
+
+        await flutterLocalNotificationsPlugin.show(
+          int.tryParse(msg.data["toma_id"]?.toString() ?? '') ??
+              DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          "Recordatorio de medicacion",
+          body,
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              kMedicationReminderChannelId,
+              kMedicationReminderChannelName,
+              importance: Importance.max,
+              priority: Priority.high,
+              playSound: true,
+              sound: RawResourceAndroidNotificationSound('alerta'),
+              icon: '@mipmap/ic_launcher',
+            ),
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+              sound: 'default',
+            ),
+          ),
+          payload: jsonEncode({
+            "tipo": "medication_reminder",
+            "toma_id": msg.data["toma_id"],
+          }),
+        );
       }
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
       if (msg.data["tipo"] == "nuevo_mensaje") {
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(
-            builder: (_) => ChatScreen(
-              consultaId: int.parse(msg.data["consulta_id"]),
-              remitenteTipo: "paciente",
-              remitenteId: msg.data["remitente_id"],
-            ),
-          ),
-        );
+        _openPatientChatFromPayload(msg.data);
+        return;
+      }
+
+      if (msg.data["tipo"] == "medication_reminder") {
+        navigatorKey.currentState?.pushNamed("/home");
       }
     });
   }
@@ -269,8 +451,7 @@ class _DocYaAppState extends State<DocYaApp> {
 
               final prefs = snap.data!;
               return HomeScreen(
-                nombreUsuario:
-                    prefs.getString("nombreUsuario") ?? "Usuario",
+                nombreUsuario: prefs.getString("nombreUsuario") ?? "Usuario",
                 userId: prefs.getString("userId") ?? "",
                 onToggleTheme: () async {
                   setState(() => darkMode = !darkMode);
@@ -280,6 +461,10 @@ class _DocYaAppState extends State<DocYaApp> {
               );
             },
           ),
+        );
+      case "/complete-profile":
+        return MaterialPageRoute(
+          builder: (_) => const CompleteProfileScreen(),
         );
       default:
         return null;
